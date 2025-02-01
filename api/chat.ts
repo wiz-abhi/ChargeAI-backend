@@ -48,7 +48,6 @@ const axiosInstance: AxiosInstance = axios.create({
   maxBodyLength: Infinity,
 })
 
-
 // Cache implementation
 const walletCache = new Map()
 

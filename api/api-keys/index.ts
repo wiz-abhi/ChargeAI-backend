@@ -1,6 +1,6 @@
 import express from "express"
-import { AuthenticatedRequest, verifyToken } from "../middleware/auth"
-import { connectToDatabase } from "../lib/mongodb"
+import { AuthenticatedRequest, verifyToken } from "../../middleware/auth"
+import { connectToDatabase } from "../../lib/mongodb"
 
 const router = express.Router()
 
