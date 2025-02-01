@@ -48,7 +48,7 @@ app.get("/health", (req, res) => {
 app.use("/api/chat", chatRoute)
 app.use("/api/generate-key", generateKeyRoute)
 app.use("/api/api-keys", apiKeysRoute)
-app.use("/api/api-key/:key", deleteKey)
+app.use("/api/api-key", deleteKey)
 app.use("/api/wallet", walletRoute)
 
 // 404 handler
