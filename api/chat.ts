@@ -58,7 +58,8 @@ const generateWalletKey = (apiKey: string): string => `wallet:${apiKey}`
 
 async function acquireLock(key: string, ttl: number): Promise<boolean> {
   const lockKey = generateWalletLockKey(key)
-  const result = await redis.set(lockKey, '1', 'NX', 'EX', ttl)
+  // Using setNX command instead of the string 'NX' option
+  const result = await redis.set(lockKey, '1', 'EX', ttl, 'NX')
   return result === 'OK'
 }
 
@@ -89,33 +90,38 @@ async function getWalletWithLock(apiKey: string) {
 
 async function updateWalletBalance(apiKey: string, cost: number): Promise<number> {
   const walletKey = generateWalletKey(apiKey)
+  let retries = 3
   
-  // Use Redis WATCH for optimistic locking
-  try {
-    await redis.watch(walletKey)
-    
-    // Get current wallet data
-    const walletStr = await redis.get(walletKey)
-    if (!walletStr) {
-      throw new Error("Wallet not found")
+  while (retries > 0) {
+    try {
+      // Get current wallet data
+      const walletStr = await redis.get(walletKey)
+      if (!walletStr) {
+        throw new Error("Wallet not found")
+      }
+      
+      const wallet = JSON.parse(walletStr)
+      const newBalance = wallet.balance - cost
+      
+      // Use Redis optimistic locking
+      const result = await redis
+        .multi()
+        .set(walletKey, JSON.stringify({ ...wallet, balance: newBalance }))
+        .exec()
+      
+      if (!result) {
+        throw new Error("Transaction failed - wallet was modified")
+      }
+      
+      return newBalance
+    } catch (error) {
+      retries--
+      if (retries === 0) throw error
+      await new Promise(resolve => setTimeout(resolve, 100))
     }
-    
-    const wallet = JSON.parse(walletStr)
-    const newBalance = wallet.balance - cost
-    
-    // Update wallet in a transaction
-    const result = await redis.multi()
-      .set(walletKey, JSON.stringify({ ...wallet, balance: newBalance }))
-      .exec()
-    
-    if (!result) {
-      throw new Error("Transaction failed - wallet was modified")
-    }
-    
-    return newBalance
-  } finally {
-    await redis.unwatch()
   }
+  
+  throw new Error("Failed to update wallet balance after retries")
 }
 
 function parseSSEResponse(chunk: string) {
