@@ -9,6 +9,7 @@ import crypto from "crypto"
 import { rateLimit, getRateLimitHeaders } from "../lib/rate-limit"
 
 const router = express.Router()
+router.use(cors());
 
 // Constants
 const CACHE_TTL = 3600 // 1 hour
@@ -242,6 +243,10 @@ router.post("/", verifyApiKey, async (req: AuthenticatedRequest, res) => {
       // Update wallet cache
       const updatedBalance = wallet.balance - cost
       await redis.setex(`wallet:${apiKey}`, WALLET_CACHE_TTL, JSON.stringify({ ...wallet, balance: updatedBalance }))
+      walletCache.set(apiKey, {
+        data: { ...wallet, balance: updatedBalance },
+        timestamp: Date.now()
+      });
 
       return res.json({
         ...completionResponse,
