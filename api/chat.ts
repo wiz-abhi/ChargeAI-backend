@@ -7,10 +7,8 @@ import { calculateCost } from "../lib/pricing"
 import { Redis } from "ioredis"
 import crypto from "crypto"
 import { rateLimit, getRateLimitHeaders } from "../lib/rate-limit"
-import cors from 'cors';
 
 const router = express.Router()
-router.use(cors());
 
 // Constants
 const CACHE_TTL = 3600 // 1 hour
