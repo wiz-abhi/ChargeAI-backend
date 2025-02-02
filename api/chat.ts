@@ -7,6 +7,7 @@ import { calculateCost } from "../lib/pricing"
 import { Redis } from "ioredis"
 import crypto from "crypto"
 import { rateLimit, getRateLimitHeaders } from "../lib/rate-limit"
+import cors from 'cors';
 
 const router = express.Router()
 router.use(cors());
