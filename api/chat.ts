@@ -2,7 +2,7 @@ import express from "express"
 import { AuthenticatedRequest } from "../middleware/auth"
 import { verifyApiKey } from "../middleware/auth"
 import axios, { AxiosInstance } from "axios"
-import { getWalletByApiKey } from "../lib/mongodb"
+import { getWalletByApiKey, updateWalletBalance } from "../lib/mongodb" // Ensure updateWalletBalance exists
 import { calculateCost } from "../lib/pricing"
 import { Redis } from "ioredis"
 import crypto from "crypto"
@@ -12,7 +12,7 @@ const router = express.Router()
 
 // Constants
 const CACHE_TTL = 3600 // 1 hour
-const WALLET_CACHE_TTL = 300 // 5 minutes
+const WALLET_CACHE_TTL = 60 // 1 minute (updated from 5 minutes)
 
 // Initialize Redis
 const redis = new Redis(process.env.REDIS_URL || "redis://localhost:6379", {
@@ -40,16 +40,12 @@ const axiosInstance: AxiosInstance = axios.create({
   headers: {
     "Content-Type": "application/json",
   },
-  // Using proper Axios configuration options
   httpAgent: new (require('http').Agent)({ keepAlive: true }),
   httpsAgent: new (require('https').Agent)({ keepAlive: true }),
   maxRedirects: 5,
   maxContentLength: Infinity,
   maxBodyLength: Infinity,
 })
-
-// Cache implementation
-const walletCache = new Map()
 
 // Helper functions
 const generateCacheKey = (messages: any[], model: string, temperature?: number, max_tokens?: number): string => {
@@ -58,17 +54,15 @@ const generateCacheKey = (messages: any[], model: string, temperature?: number, 
 }
 
 async function getCachedWallet(apiKey: string) {
-  const cachedWallet = walletCache.get(apiKey)
-  if (cachedWallet && Date.now() - cachedWallet.timestamp < WALLET_CACHE_TTL * 1000) {
-    return cachedWallet.data
-  }
-  
+  // Check Redis cache first
+  const cachedWallet = await redis.get(`wallet:${apiKey}`)
+  if (cachedWallet) return JSON.parse(cachedWallet)
+
+  // Fallback to MongoDB if not in Redis
   const wallet = await getWalletByApiKey(apiKey)
   if (wallet) {
-    walletCache.set(apiKey, {
-      data: wallet,
-      timestamp: Date.now()
-    })
+    // Cache in Redis for subsequent requests
+    await redis.setex(`wallet:${apiKey}`, WALLET_CACHE_TTL, JSON.stringify(wallet))
   }
   return wallet
 }
@@ -162,7 +156,6 @@ router.post("/", verifyApiKey, async (req: AuthenticatedRequest, res) => {
     const { wallet, deploymentName } = await validateRequest(apiKey, model)
 
     if (stream) {
-      // Set up streaming response
       res.setHeader('Content-Type', 'text/event-stream')
       res.setHeader('Cache-Control', 'no-cache')
       res.setHeader('Connection', 'keep-alive')
@@ -199,15 +192,21 @@ router.post("/", verifyApiKey, async (req: AuthenticatedRequest, res) => {
       response.data.on('end', async () => {
         if (lastChunk?.usage) {
           const cost = calculateCost(model, lastChunk.usage.total_tokens)
-          // Update wallet balance in cache
-          const updatedBalance = wallet.balance - cost
-          await redis.setex(`wallet:${apiKey}`, WALLET_CACHE_TTL, JSON.stringify({ ...wallet, balance: updatedBalance }))
+          
+          // Update MongoDB and Redis
+          await updateWalletBalance(apiKey, -cost)
+          const updatedWallet = await getCachedWallet(apiKey) // Refresh from cache
+          const updatedBalance = updatedWallet?.balance ?? wallet.balance - cost
+          
+          await redis.setex(`wallet:${apiKey}`, WALLET_CACHE_TTL, JSON.stringify({
+            ...wallet,
+            balance: updatedBalance
+          }))
         }
         res.write('data: [DONE]\n\n')
         res.end()
       })
 
-      // Handle client disconnect
       req.on('close', () => {
         controller.abort()
       })
@@ -235,17 +234,20 @@ router.post("/", verifyApiKey, async (req: AuthenticatedRequest, res) => {
         return res.status(402).json({ error: "Insufficient funds" })
       }
 
+      // Update MongoDB and Redis
+      await updateWalletBalance(apiKey, -cost)
+      const updatedWallet = await getCachedWallet(apiKey) // Refresh from cache
+      const updatedBalance = updatedWallet?.balance ?? wallet.balance - cost
+
       // Cache the response
       const cacheKey = generateCacheKey(messages, model, temperature, max_tokens)
       await redis.setex(cacheKey, CACHE_TTL, JSON.stringify(completionResponse))
 
-      // Update wallet cache
-      const updatedBalance = wallet.balance - cost
-      await redis.setex(`wallet:${apiKey}`, WALLET_CACHE_TTL, JSON.stringify({ ...wallet, balance: updatedBalance }))
-      walletCache.set(apiKey, {
-        data: { ...wallet, balance: updatedBalance },
-        timestamp: Date.now()
-      });
+      // Update Redis wallet cache
+      await redis.setex(`wallet:${apiKey}`, WALLET_CACHE_TTL, JSON.stringify({
+        ...wallet,
+        balance: updatedBalance
+      }))
 
       return res.json({
         ...completionResponse,
