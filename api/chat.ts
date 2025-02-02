@@ -2,11 +2,11 @@ import express from "express"
 import { AuthenticatedRequest } from "../middleware/auth"
 import { verifyApiKey } from "../middleware/auth"
 import axios, { AxiosInstance } from "axios"
-import { getWalletByApiKey } from "../lib/mongodb"
+import { getWalletByApiKey, updateWalletBalance as updateMongoWalletBalance } from "../lib/mongodb"
 import { calculateCost } from "../lib/pricing"
 import { Redis } from "ioredis"
 import crypto from "crypto"
-import { rateLimit, getRateLimitHeaders } from "../lib/rate-limit"
+import { rateLimit } from "../lib/rate-limit"
 
 const router = express.Router()
 
@@ -37,9 +37,7 @@ const MODEL_DEPLOYMENTS = {
 // Create optimized axios instance
 const axiosInstance: AxiosInstance = axios.create({
   timeout: 30000,
-  headers: {
-    "Content-Type": "application/json",
-  },
+  headers: { "Content-Type": "application/json" },
   httpAgent: new (require('http').Agent)({ keepAlive: true }),
   httpsAgent: new (require('https').Agent)({ keepAlive: true }),
   maxRedirects: 5,
@@ -53,65 +51,39 @@ const generateCacheKey = (messages: any[], model: string, temperature?: number, 
   return crypto.createHash('md5').update(data).digest('hex')
 }
 
-const generateWalletLockKey = (apiKey: string): string => `wallet:lock:${apiKey}`
 const generateWalletKey = (apiKey: string): string => `wallet:${apiKey}`
 
-async function acquireLock(key: string, ttl: number): Promise<boolean> {
-  const lockKey = generateWalletLockKey(key)
-  // Using setNX command instead of the string 'NX' option
-  const result = await redis.set(lockKey, '1', 'EX', ttl, 'NX')
-  return result === 'OK'
-}
-
-async function releaseLock(key: string): Promise<void> {
-  const lockKey = generateWalletLockKey(key)
-  await redis.del(lockKey)
-}
-
-async function getWalletWithLock(apiKey: string) {
-  // Try to get wallet from Redis first
+async function getWalletFromRedis(apiKey: string) {
   const walletKey = generateWalletKey(apiKey)
-  let wallet = await redis.get(walletKey)
-  
-  if (!wallet) {
-    // If not in Redis, get from MongoDB
-    const dbWallet = await getWalletByApiKey(apiKey)
-    if (!dbWallet) {
-      throw new Error("Invalid API key")
-    }
-    
-    // Store in Redis
-    await redis.set(walletKey, JSON.stringify(dbWallet))
-    return dbWallet
-  }
-  
-  return JSON.parse(wallet)
+  const wallet = await redis.get(walletKey)
+  return wallet ? JSON.parse(wallet) : null
 }
 
-async function updateWalletBalance(apiKey: string, cost: number): Promise<number> {
+async function updateWalletBalances(apiKey: string, userId: string, cost: number): Promise<number> {
   const walletKey = generateWalletKey(apiKey)
   let retries = 3
   
   while (retries > 0) {
     try {
-      // Get current wallet data
       const walletStr = await redis.get(walletKey)
-      if (!walletStr) {
-        throw new Error("Wallet not found")
-      }
+      if (!walletStr) throw new Error("Wallet not found")
       
       const wallet = JSON.parse(walletStr)
       const newBalance = wallet.balance - cost
       
-      // Use Redis optimistic locking
+      // Update Redis immediately
       const result = await redis
         .multi()
         .set(walletKey, JSON.stringify({ ...wallet, balance: newBalance }))
         .exec()
       
-      if (!result) {
-        throw new Error("Transaction failed - wallet was modified")
-      }
+      if (!result) throw new Error("Redis transaction failed")
+      
+      // Update MongoDB asynchronously
+      updateMongoWalletBalance(userId, -cost).catch(error => {
+        console.error('Failed to update MongoDB wallet balance:', error)
+        // Implement retry mechanism or alerting system here
+      })
       
       return newBalance
     } catch (error) {
@@ -145,20 +117,25 @@ function parseSSEResponse(chunk: string) {
 }
 
 async function validateRequest(apiKey: string, model: string) {
-  const wallet = await getWalletWithLock(apiKey)
+  // Try Redis first
+  let wallet = await getWalletFromRedis(apiKey)
+  
+  if (!wallet) {
+    // Fallback to MongoDB
+    wallet = await getWalletByApiKey(apiKey)
+    if (!wallet) throw new Error("Invalid API key")
+    
+    // Cache in Redis
+    await redis.set(generateWalletKey(apiKey), JSON.stringify(wallet))
+  }
 
   const [rateLimitResult, deploymentName] = await Promise.all([
     wallet.userId ? rateLimit(wallet.userId) : { success: true },
     MODEL_DEPLOYMENTS[model]
   ])
 
-  if (!rateLimitResult.success) {
-    throw new Error("Rate limit exceeded")
-  }
-
-  if (!deploymentName) {
-    throw new Error("Invalid model specified")
-  }
+  if (!rateLimitResult.success) throw new Error("Rate limit exceeded")
+  if (!deploymentName) throw new Error("Invalid model specified")
 
   return { wallet, deploymentName }
 }
@@ -178,10 +155,7 @@ router.post("/", verifyApiKey, async (req: AuthenticatedRequest, res) => {
     } = req.body
     
     const apiKey = req.apiKey
-
-    if (!apiKey) {
-      return res.status(401).json({ error: "API key is required" })
-    }
+    if (!apiKey) return res.status(401).json({ error: "API key is required" })
 
     // Check cache for non-streaming requests
     if (!stream) {
@@ -197,8 +171,8 @@ router.post("/", verifyApiKey, async (req: AuthenticatedRequest, res) => {
           return res.status(402).json({ error: "Insufficient funds" })
         }
 
-        const newBalance = await updateWalletBalance(apiKey, cost)
-
+        const newBalance = await updateWalletBalances(apiKey, wallet.userId, cost)
+        
         return res.json({
           ...parsed,
           cost,
@@ -248,15 +222,13 @@ router.post("/", verifyApiKey, async (req: AuthenticatedRequest, res) => {
       response.data.on('end', async () => {
         if (lastChunk?.usage) {
           const cost = calculateCost(model, lastChunk.usage.total_tokens)
-          await updateWalletBalance(apiKey, cost)
+          await updateWalletBalances(apiKey, wallet.userId, cost)
         }
         res.write('data: [DONE]\n\n')
         res.end()
       })
 
-      req.on('close', () => {
-        controller.abort()
-      })
+      req.on('close', () => controller.abort())
     } else {
       const response = await axiosInstance.post(
         `${AZURE_CONFIG.endpoint}/openai/deployments/${deploymentName}/chat/completions`,
@@ -285,8 +257,8 @@ router.post("/", verifyApiKey, async (req: AuthenticatedRequest, res) => {
       const cacheKey = generateCacheKey(messages, model, temperature, max_tokens)
       await redis.setex(cacheKey, CACHE_TTL, JSON.stringify(completionResponse))
 
-      // Update wallet balance with transaction
-      const newBalance = await updateWalletBalance(apiKey, cost)
+      // Update wallet balances - Redis immediately, MongoDB async
+      const newBalance = await updateWalletBalances(apiKey, wallet.userId, cost)
 
       return res.json({
         ...completionResponse,
