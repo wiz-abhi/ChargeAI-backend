@@ -28,9 +28,18 @@ if (!getApps().length) {
 app.use(express.json())
 app.use(
   cors({
-    origin: process.env.FRONTEND_URL || "https://your-frontend-app.vercel.app",
+    origin: process.env.FRONTEND_URL ,
     credentials: true,
   })
+)
+
+app.use(
+  "/api/chat",
+  cors({
+    origin: "*", // Allow all origins for this route
+    credentials: true,
+  }),
+  chatRoute
 )
 
 // Error handling middleware
@@ -45,7 +54,6 @@ app.get("/health", (req, res) => {
 })
 
 // API routes
-app.use("/api/chat", chatRoute)
 app.use("/api/generate-key", generateKeyRoute)
 app.use("/api/api-keys", apiKeysRoute)
 app.use("/api/api-key", deleteKey)
