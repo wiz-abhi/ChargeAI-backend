@@ -40,7 +40,7 @@ export async function createWallet(userId: string) {
   const wallets = db.collection<WalletDocument>("wallets")
   const wallet: WalletDocument = {
     userId,
-    balance: 2.0
+    balance: 1.0
   }
   const result = await wallets.insertOne(wallet)
   return { ...wallet, _id: result.insertedId }
