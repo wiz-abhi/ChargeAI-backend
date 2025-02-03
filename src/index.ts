@@ -24,7 +24,7 @@ if (!getApps().length) {
 }
 
 // Global middleware for CORS
-const FRONTEND_ORIGIN = process.env.FRONTEND_URL || "https://your-frontend-app.vercel.app"
+const FRONTEND_ORIGIN = process.env.FRONTEND_URL
 
 app.use((req, res, next) => {
   const origin = req.headers.origin
