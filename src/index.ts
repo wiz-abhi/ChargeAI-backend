@@ -1,5 +1,4 @@
 import express from "express"
-import cors from "cors"
 import { initializeApp, cert, getApps } from "firebase-admin/app"
 import chatRoute from "../api/chat"
 import generateKeyRoute from "../api/generate-key"
@@ -24,23 +23,42 @@ if (!getApps().length) {
   }
 }
 
-// Global middleware
-app.use(express.json())
-app.use(
-  cors({
-    origin: process.env.FRONTEND_URL ,
-    credentials: true,
-  })
-)
+// Global middleware for CORS
+const FRONTEND_ORIGIN = process.env.FRONTEND_URL || "https://your-frontend-app.vercel.app"
 
-app.use(
-  "/api/chat",
-  cors({
-    origin: "*", // Allow all origins for this route
-    credentials: true,
-  }),
-  chatRoute
-)
+app.use((req, res, next) => {
+  const origin = req.headers.origin
+
+  // Allow all origins for /api/chat
+  if (req.path.startsWith("/api/chat")) {
+    res.setHeader("Access-Control-Allow-Origin", "*")
+  } else if (origin === FRONTEND_ORIGIN) {
+    // Allow only frontend for other routes
+    res.setHeader("Access-Control-Allow-Origin", FRONTEND_ORIGIN)
+  }
+
+  // Set CORS headers for methods and credentials
+  res.setHeader("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,OPTIONS")
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, x-api-key")
+  res.setHeader("Access-Control-Allow-Credentials", "true")
+
+  // Handle preflight request
+  if (req.method === "OPTIONS") {
+    return res.status(200).end()
+  }
+
+  next()
+})
+
+// Middleware for JSON parsing
+app.use(express.json())
+
+// API routes
+app.use("/api/chat", chatRoute)
+app.use("/api/generate-key", generateKeyRoute)
+app.use("/api/api-keys", apiKeysRoute)
+app.use("/api/api-key", deleteKey)
+app.use("/api/wallet", walletRoute)
 
 // Error handling middleware
 app.use((err: Error, req: express.Request, res: express.Response, next: express.NextFunction) => {
@@ -53,12 +71,6 @@ app.get("/health", (req, res) => {
   res.status(200).json({ status: "ok" })
 })
 
-// API routes
-app.use("/api/generate-key", generateKeyRoute)
-app.use("/api/api-keys", apiKeysRoute)
-app.use("/api/api-key", deleteKey)
-app.use("/api/wallet", walletRoute)
-
 // 404 handler
 app.use((req, res) => {
   res.status(404).json({ error: "Not Found" })
@@ -68,7 +80,7 @@ app.use((req, res) => {
 if (process.env.NODE_ENV !== "production") {
   const port = process.env.PORT || 3001
   app.listen(port, () => {
-    console.log(Server is running on port ${port})
+    console.log(`Server is running on port ${port}`)
   })
 }
 
