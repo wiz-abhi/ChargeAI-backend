@@ -5,6 +5,7 @@ import generateKeyRoute from "../api/generate-key"
 import apiKeysRoute from "../api/api-keys"
 import walletRoute from "../api/wallet"
 import deleteKey from "../api/api-key/[key]"
+import useAI from "../v1/chat/completions"
 
 const app = express()
 
@@ -30,7 +31,7 @@ app.use((req, res, next) => {
   const origin = req.headers.origin
 
   // Allow all origins for /api/chat
-  if (req.path.startsWith("/api/chat")) {
+  if (req.path.startsWith("/api/chat") || req.path.startsWith("/v1/chat/completions") ) {
     res.setHeader("Access-Control-Allow-Origin", "*")
   } else if (origin === FRONTEND_ORIGIN) {
     // Allow only frontend for other routes
@@ -59,6 +60,7 @@ app.use("/api/generate-key", generateKeyRoute)
 app.use("/api/api-keys", apiKeysRoute)
 app.use("/api/api-key", deleteKey)
 app.use("/api/wallet", walletRoute)
+app.use("/v1/chat/completions",useAI)
 
 // Error handling middleware
 app.use((err: Error, req: express.Request, res: express.Response, next: express.NextFunction) => {
