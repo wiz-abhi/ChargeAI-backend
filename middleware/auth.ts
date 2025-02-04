@@ -35,11 +35,19 @@ export const verifyApiKey = async (
   next: NextFunction
 ) => {
   try {
-    const apiKey = req.headers["x-api-key"]
+    let apiKey = req.headers["x-api-key"] as string | undefined
+
+    // Check if API key is also provided in the Authorization header
+    const authHeader = req.headers.authorization
+    if (!apiKey && authHeader?.startsWith("Bearer ")) {
+      apiKey = authHeader.split("Bearer ")[1]
+    }
+
     if (!apiKey) {
       return res.status(401).json({ error: "API key is required" })
     }
-    req.apiKey = apiKey as string
+
+    req.apiKey = apiKey
     next()
   } catch (error) {
     console.error("API key error:", error)
