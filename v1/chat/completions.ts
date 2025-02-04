@@ -1,12 +1,12 @@
 import express from "express"
-import { AuthenticatedRequest } from "../middleware/auth"
-import { verifyApiKey } from "../middleware/auth"
+import { AuthenticatedRequest } from "../../middleware/auth"
+import { verifyApiKey } from "../../middleware/auth"
 import axios, { AxiosInstance } from "axios"
-import { getWalletByApiKey, updateWalletBalance as updateMongoWalletBalance } from "../lib/mongodb"
-import { calculateCost } from "../lib/pricing"
+import { getWalletByApiKey, updateWalletBalance as updateMongoWalletBalance } from "../../lib/mongodb"
+import { calculateCost } from "../../lib/pricing"
 import { Redis } from "ioredis"
 import crypto from "crypto"
-import { rateLimit } from "../lib/rate-limit"
+import { rateLimit } from "../../lib/rate-limit"
 
 const router = express.Router()
 
