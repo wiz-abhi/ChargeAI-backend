@@ -5,8 +5,8 @@ type ModelPricing = {
 const originalPricing: ModelPricing = {
   "gpt-3.5-turbo": 0.002,
   "gpt-4": 0.03,
-  "gpt-4-32k": 0.06,
-  "gpt-4o": 0.01,
+  "gpt-4o-mini": 0.00060,
+  "gpt-4o": 0.015,
 }
 
 export const discountedPricing: ModelPricing = Object.entries(originalPricing).reduce((acc, [model, price]) => {

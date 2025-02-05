@@ -28,10 +28,18 @@ const AZURE_CONFIG = {
   apiVersion: "2023-05-15",
 }
 
+// New GPT-4O Configuration
+const GPT4O_CONFIG = {
+  endpoint: process.env.AZURE_GPT4O_ENDPOINT,
+  apiKey: process.env.AZURE_GPT4O_API_KEY,
+  apiVersion: "2023-05-15",
+}
+
 const MODEL_DEPLOYMENTS = {
   'gpt-4': process.env.AZURE_GPT4_DEPLOYMENT_NAME,
-  'gpt-4o': process.env.AZURE_OPENAI_DEPLOYMENT_NAME,
+  'gpt-4o-mini': process.env.AZURE_OPENAI_DEPLOYMENT_NAME,
   'gpt-3.5-turbo': process.env.AZURE_GPT35_DEPLOYMENT_NAME,
+  'gpt-4o': process.env.AZURE_GPT4O_DEPLOYMENT_NAME,
 }
 
 // Create optimized axios instance
@@ -140,6 +148,10 @@ async function validateRequest(apiKey: string, model: string) {
   return { wallet, deploymentName }
 }
 
+function getModelConfig(model: string) {
+  return model === 'gpt-4o' ? GPT4O_CONFIG : AZURE_CONFIG
+}
+
 // Main route handler
 router.post("/", verifyApiKey, async (req: AuthenticatedRequest, res) => {
   const controller = new AbortController()
@@ -148,7 +160,7 @@ router.post("/", verifyApiKey, async (req: AuthenticatedRequest, res) => {
   try {
     const { 
       messages, 
-      model = "gpt-4o", 
+      model = "gpt-4", 
       temperature, 
       max_tokens, 
       stream = false 
@@ -184,6 +196,7 @@ router.post("/", verifyApiKey, async (req: AuthenticatedRequest, res) => {
 
     // Validate request
     const { wallet, deploymentName } = await validateRequest(apiKey, model)
+    const modelConfig = getModelConfig(model)
 
     if (stream) {
       res.setHeader('Content-Type', 'text/event-stream')
@@ -191,7 +204,7 @@ router.post("/", verifyApiKey, async (req: AuthenticatedRequest, res) => {
       res.setHeader('Connection', 'keep-alive')
 
       const response = await axiosInstance.post(
-        `${AZURE_CONFIG.endpoint}/openai/deployments/${deploymentName}/chat/completions`,
+        `${modelConfig.endpoint}/openai/deployments/${deploymentName}/chat/completions`,
         {
           messages,
           model,
@@ -200,8 +213,8 @@ router.post("/", verifyApiKey, async (req: AuthenticatedRequest, res) => {
           stream: true
         },
         {
-          params: { 'api-version': AZURE_CONFIG.apiVersion },
-          headers: { "api-key": AZURE_CONFIG.apiKey },
+          params: { 'api-version': modelConfig.apiVersion },
+          headers: { "api-key": modelConfig.apiKey },
           responseType: 'stream',
           signal
         }
@@ -231,7 +244,7 @@ router.post("/", verifyApiKey, async (req: AuthenticatedRequest, res) => {
       req.on('close', () => controller.abort())
     } else {
       const response = await axiosInstance.post(
-        `${AZURE_CONFIG.endpoint}/openai/deployments/${deploymentName}/chat/completions`,
+        `${modelConfig.endpoint}/openai/deployments/${deploymentName}/chat/completions`,
         {
           messages,
           model,
@@ -240,8 +253,8 @@ router.post("/", verifyApiKey, async (req: AuthenticatedRequest, res) => {
           stream: false
         },
         {
-          params: { 'api-version': AZURE_CONFIG.apiVersion },
-          headers: { "api-key": AZURE_CONFIG.apiKey },
+          params: { 'api-version': modelConfig.apiVersion },
+          headers: { "api-key": modelConfig.apiKey },
           signal
         }
       )

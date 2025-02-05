@@ -160,7 +160,7 @@ router.post("/", verifyApiKey, async (req: AuthenticatedRequest, res) => {
   try {
     const { 
       messages, 
-      model = "gpt-4o-mini", 
+      model = "gpt-4", 
       temperature, 
       max_tokens, 
       stream = false 
