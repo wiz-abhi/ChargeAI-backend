@@ -7,7 +7,7 @@ import walletRoute from "../api/wallet"
 import deleteKey from "../api/api-key/[key]"
 import useAI from "../v1/chat/completions"
 import verifyPayment from "../api/verify-payment"
-import webhookRoute from "../api/webhook"
+import webhookRoute from "../api/webhooks/paypal"
 
 const app = express()
 
@@ -64,7 +64,7 @@ app.use("/api/api-key", deleteKey)
 app.use("/api/wallet", walletRoute)
 app.use("/v1/chat/completions",useAI)
 app.use("/api/verify-payment",verifyPayment)
-app.use("/api/webhook", webhookRoute)
+app.use("/api/webhooks/paypal", webhookRoute)
 
 // Error handling middleware
 app.use((err: Error, req: express.Request, res: express.Response, next: express.NextFunction) => {
