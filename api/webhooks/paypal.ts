@@ -4,7 +4,7 @@ import { updateWalletBalance } from "../lib/mongodb"
 
 const router = Router()
 
-router.post("/paypal", async (req, res) => {
+router.post("/", async (req, res) => {
   try {
     const webhookEvent = req.body
 
