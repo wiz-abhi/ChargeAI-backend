@@ -6,6 +6,7 @@ import apiKeysRoute from "../api/api-keys"
 import walletRoute from "../api/wallet"
 import deleteKey from "../api/api-key/[key]"
 import useAI from "../v1/chat/completions"
+import verifyPayment from "../api/verify-payment"
 
 const app = express()
 
@@ -61,6 +62,7 @@ app.use("/api/api-keys", apiKeysRoute)
 app.use("/api/api-key", deleteKey)
 app.use("/api/wallet", walletRoute)
 app.use("/v1/chat/completions",useAI)
+app.use("/api/verify-payment",verifyPayment)
 
 // Error handling middleware
 app.use((err: Error, req: express.Request, res: express.Response, next: express.NextFunction) => {
