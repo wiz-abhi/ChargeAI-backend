@@ -1,6 +1,6 @@
 // api/webhooks/paypal.ts
 import { Router } from "express"
-import { updateWalletBalance } from "../lib/mongodb"
+import { updateWalletBalance } from "../../lib/mongodb"
 
 const router = Router()
 
